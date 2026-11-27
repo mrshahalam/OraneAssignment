@@ -1,0 +1,333 @@
+Enterprise Workforce Management System | Candidate Assignment | Confidential | Page 1 of 8 
+FULL-STACK DEVELOPMENT ASSIGNMENT 
+Enterprise Workforce 
+Management System 
+Candidate Assignment | Followed by a Technical Discussion 
+Build a small, enterprise-style workforce management application that lets an organization manage its employees, 
+departments, positions, reporting hierarchy, leave requests and bulk employee imports. The application must support three 
+user roles, and every permission must be enforced on the backend. 
+Before you start: please read the full document. The scope is intentionally broad, and Section 2 explains what to build 
+first. We do not expect a production-ready HR platform. A smaller set of features that work end to end and are well 
+reasoned is valued more than a large set that is half finished. 
+1. Objective 
+Design and build a working full-stack application. The assignment is meant to show us how you: 
+• design a relational data model with the right keys, constraints and indexes; 
+• implement business rules on the backend and expose them through clean, consistent APIs; 
+• handle concurrency correctly, both for background processing and for simultaneous updates; 
+• secure APIs with authentication and role-based access control; 
+• build a usable, role-aware frontend; and 
+• test your work and explain your design decisions and trade-offs. 
+Technology choice: you are free to use any frontend framework, backend language and framework, and relational 
+database that you are comfortable with. Choose tools that let you deliver a working solution, and briefly explain your 
+choices in your solution document. Do not integrate with SAP HCM, SuccessFactors or any other external enterprise 
+system; use generated sample data and seeded users for the three roles. 
+2. Scope and Priorities 
+Build in the order below. Complete the Must-have items before starting on anything else. 
+Priority Scope 
+Must have • Login for all three roles using seeded users, with role-based access control on every protected 
+backend API 
+• Employee create, update, deactivate and role-scoped listing 
+• Department and position setup, and concurrency-safe position assignment 
+• Reporting hierarchy with cycle prevention 
+• Asynchronous bulk import with row-level errors and safe retry 
+• Leave application with a data-driven, sequential approval workflow and audit history 
+• Docker Compose setup, solution document, API documentation and tests for key business rules 
+Should have • Organization tree view 
+• Failed-row report download and live import progress in the UI 
+• Workflow configuration screen (configuring the workflow through an API or seed data is 
+acceptable if the screen is not finished) 
+• Position assignment history screen 
+Enterprise Workforce Management System | Candidate Assignment | Confidential | Page 2 of 8 
+Priority Scope 
+Nice to have • Frontend tests 
+• Leave cancellation by the employee 
+• Conditional workflow steps (for example, HR approval only for leave longer than five days) 
+• An audit trail of changes to employee records, and a CI pipeline 
+• Anything else you believe adds real value 
+ 
+If you cannot complete everything, state clearly in your solution document what is complete, what is partial and what you 
+would do next. An honest, accurate status is valued more than broad but unreliable coverage. 
+3. User Roles and Permissions 
+The application must support the following three roles. The responsibilities below define who initiates each operation. Do 
+not assume that every user can perform every action. 
+HR Administrator: Responsible for organization-wide administration: employee records, bulk imports, departments, 
+positions, employee-position assignments, reporting relationships and approval-workflow configuration. Can view 
+organization-wide employee and leave information. 
+Manager: Responsible for their team: viewing direct and indirect reports, reviewing leave requests from direct reports, and 
+approving or rejecting requests when the workflow assigns them an approval step. 
+Employee: Responsible for self-service activities: viewing their own profile, updating permitted personal details, applying 
+for leave, and tracking their own leave balance and request history. 
+Every user account is linked to an employee record. Managers and HR Administrators are also employees, so they can use 
+all Employee self-service features for their own record (for example, applying for their own leave). A Manager’s team is 
+defined by the reporting hierarchy: their direct and indirect reports. 
+Seed at least one HR Administrator, two Managers (one reporting to the other) and several Employees, so that direct and 
+indirect reporting can be demonstrated. 
+Permission summary 
+Capability HR Administrator Manager Employee 
+Create, update and deactivate employee 
+records 
+Yes No No 
+View employee profiles All employees Self and team Self only 
+Update own self-service fields Yes Yes Yes 
+Upload bulk employee imports Yes No No 
+Manage departments and organization 
+structure 
+Yes View only View only 
+Manage positions and position assignments Yes View only View only 
+Set or change an employee’s manager Yes No No 
+Apply for own leave Yes Yes Yes 
+Approve or reject leave When assigned an HR 
+step 
+When assigned a 
+manager step 
+No 
+View leave requests All Own, assigned and 
+team requests 
+Own only 
+Configure the approval workflow Yes No No 
+Enterprise Workforce Management System | Candidate Assignment | Confidential | Page 3 of 8 
+ 
+4. Functional Requirements 
+4.1 Employee Management 
+Who performs these tasks: HR Administrator creates, edits and deactivates employee records. Employees can view their 
+own profile and update only permitted personal fields. Managers can view the profiles of their direct and indirect reports but 
+cannot edit employee master records. 
+• HR Administrator can create an employee with employee ID, name, email, date of joining, department, position, 
+manager and employment status. Employee ID and email must be unique. 
+• HR Administrator can update employee details, change department, position or manager, and deactivate an employee. 
+Deactivation is a soft delete: the employee’s history (leave, assignments and approvals) must be preserved, and a 
+deactivated employee cannot log in. 
+• Decide how you handle a deactivated employee’s direct reports, active position and pending approval tasks, and 
+document your choice. 
+• Employees can view their own profile and update only self-service fields (for example, phone number or address). The 
+backend must reject attempts to change any other field. 
+• Managers can view the profiles of their direct and indirect reports. Define which fields are restricted (for example, home 
+address), make sure the API does not return them to Managers, and document the list. 
+• Provide an employee listing with server-side search, filtering (at least by department and employment status), sorting 
+and pagination. HR Administrator can search organization-wide, a Manager can search only within their team, and an 
+Employee can access only their own record. 
+4.2 Bulk Employee Import 
+Who performs these tasks: Only the HR Administrator can upload and initiate a bulk employee import. Managers and 
+Employees must not be allowed to upload employee master data. 
+• HR Administrator uploads a CSV or Excel file of employee records. Unsupported file types and oversized files are 
+rejected with a clear message. 
+• Each row is validated for required fields, email and date formats, department, position and manager references, and 
+duplicate employee IDs or email addresses (both within the file and against existing records). 
+• Valid rows are imported; invalid rows are rejected with the row number and a clear error reason. One invalid row must 
+not cause valid rows to fail. 
+• Show an import summary with total rows, successful rows, failed rows and the job status (for example: Queued, 
+Processing, Completed, Completed with errors, Failed). 
+• HR Administrator can download a failed-row report (original row data plus the error reason), correct the rows and 
+upload them again. Re-uploading rows that were already imported must not create duplicates; decide whether such 
+rows are skipped or reported, and document it. 
+• The import runs asynchronously using a bounded thread pool or an equivalent controlled background-processing 
+mechanism. The UI shows job status and progress (polling is fine). See Section 5.1. 
+Enterprise Workforce Management System | Candidate Assignment | Confidential | Page 4 of 8 
+Suggested file format. You may use the layout below or define your own. Either way, include a template and a sample file 
+in the repository and describe the format in your solution document. 
+Column Required Rules 
+employee_id Yes Unique business key (for example, EMP00123) 
+first_name, last_name Yes Must not be empty 
+email Yes Valid format; unique 
+date_of_joining Yes YYYY-MM-DD 
+department_code Yes Must match an existing active department 
+position_code No Must match an existing position; the one-active-employee-per-position rule still 
+applies 
+manager_employee_id No Must match an existing employee or another row in the same file, and must not 
+create a cycle; document how you handle ordering 
+employment_status Yes ACTIVE or INACTIVE 
+ 
+4.3 Department and Organization Management 
+Who performs these tasks: Only the HR Administrator creates, edits or deactivates departments and defines parent-child 
+department relationships. Managers and Employees may view the relevant organization structure but cannot change it. 
+• Support departments and sub-departments through parent-child relationships. Each department has a unique 
+department code. 
+• HR Administrator can create, update and deactivate departments. A department cannot be made a child of itself or of 
+one of its own sub-departments. 
+• A department that still has active employees or active sub-departments cannot be deactivated; return a clear error. 
+• Display the organization hierarchy as a tree or an equivalent visual representation. 
+• Managers can view their own reporting hierarchy and team structure. Employees can view the department hierarchy 
+and their own reporting line (their chain of managers) in read-only mode. 
+4.4 Position Management and Employee Assignment 
+Who performs these tasks: Only the HR Administrator creates and manages positions and assigns employees to 
+positions. Managers and Employees have read-only access to the position information they are permitted to see. 
+• HR Administrator can create and update positions with a unique position code, title, department and, where 
+applicable, a reporting position. 
+• HR Administrator can assign an employee to a position with an effective start date, and end an assignment with an end 
+date. 
+• Keep the full employee-position assignment history; never overwrite past assignments. 
+• A position can have at most one active employee assignment at a time, and an employee holds at most one active 
+position at a time. Assigning an employee to a new position ends their previous active assignment in the same 
+transaction. 
+• Vacant positions must be easy to identify (for example, through a filter on the position list). 
+• If two HR Administrators try to assign different employees to the same vacant position at the same time, at most one 
+assignment may succeed. The other request must receive a clear conflict response (HTTP 409). See Section 5.2. 
+4.5 Reporting Relationships and Hierarchy Validation 
+Who performs these tasks: The HR Administrator sets or changes an employee’s manager. Managers and Employees can 
+view the reporting hierarchy permitted for their role but cannot edit reporting relationships. 
+Enterprise Workforce Management System | Candidate Assignment | Confidential | Page 5 of 8 
+• Support direct and indirect reporting relationships. Only active employees can be assigned as managers. 
+• Provide APIs to retrieve a manager’s direct reports and their full reporting tree (all descendants). 
+• Prevent circular reporting relationships, including self-reporting (A reports to A), direct cycles (A reports to B and B 
+reports to A) and indirect cycles (A → B → C → A). 
+• Explain the approach used to detect cycles and retrieve descendants. See Section 5.4. 
+4.6 Leave Management and Approval Workflow 
+Who performs these tasks: All users (Employees, Managers and HR Administrators) can submit leave requests for 
+themselves. Managers approve or reject requests when assigned as an approver. HR Administrator configures the approval 
+workflow and performs HR-level approval when that step is part of the configured workflow. 
+• An employee can submit a leave request with leave type, start date, end date and reason. 
+• Seed at least three leave types (for example, Casual, Sick and Earned) with a fixed annual balance for each employee. 
+Accrual, carry-forward and payroll or external HR integration are not required. 
+• Count leave in working days (Monday to Friday). Public holidays and half-day leave can be ignored. 
+• Validate required fields, date ranges, overlaps with the employee’s own pending or approved requests, and available 
+balance. Pending requests count against the available balance, so several pending requests together cannot exceed it. 
+The balance is consumed when the request is finally approved and released if it is rejected. 
+• Each request follows a configurable, sequential approval workflow stored in the database, for example Manager 
+approval followed by HR approval. Each step defines who may act on it (for example, the requester’s manager, or any 
+HR Administrator). 
+• The manager step is assigned to the requester’s direct manager, so a Manager’s own leave goes to their own manager. 
+Decide and document what happens when a requester has no manager. 
+• Approving a step moves the request to the next step; approving the final step marks it Approved. Rejecting at any step 
+ends the workflow and marks it Rejected. A comment is mandatory when rejecting. 
+• No one may act on their own leave request, and only an authorized approver can act on the current step. 
+• HR Administrator can configure the approval steps. Changing the configuration must not break requests that are 
+already in progress; document how you handle this. 
+• Employees can view only their own requests, balances and approval history. Managers can view requests assigned to 
+them and the leave status of their team. HR Administrator can view all requests. 
+• Maintain an approval history with approver, action, comment and timestamp. Prevent duplicate actions and invalid 
+status transitions, including two approvers acting on the same step at the same moment. 
+5. Key Technical Challenges (Mandatory) 
+These four areas carry the most weight in the evaluation. Be prepared to explain each of them in detail during the 
+discussion. 
+5.1 Concurrent Bulk Import Processing 
+Process imports with a bounded thread pool, worker pool or job queue with a fixed concurrency limit. Do not create an 
+unbounded number of threads or workers, and do not load a large file entirely into memory when it can be streamed or read 
+in batches. Track job progress and isolate row-level failures so that one bad row or batch does not stop the job. 
+Demonstrate the implementation with a sample file of at least 1,000 rows containing valid, invalid and duplicate records, 
+and include that file (or a script that generates it) in the repository. Explain how you chose the pool size and batch size. 
+5.2 Concurrent Position Assignment 
+Enforce the one-active-employee-per-position rule so that it holds even under simultaneous requests. Use an appropriate 
+strategy, such as a database constraint, optimistic locking or pessimistic locking, and explain why you chose it. A simple 
+“check if vacant, then insert” in application code is not sufficient on its own. Prove the behavior with an automated test that 
+sends simultaneous assignment requests and asserts that exactly one succeeds and no position ends up with two active 
+assignments. 
+Enterprise Workforce Management System | Candidate Assignment | Confidential | Page 6 of 8 
+5.3 Configurable Approval Workflow 
+Approval steps must be data-driven rather than hard-coded to a single fixed sequence: adding, removing or reordering a 
+step should need a configuration change, not a code change. Validate who is allowed to act at each step, prevent duplicate 
+or conflicting actions, and keep a complete audit history. 
+5.4 Hierarchy Cycle Detection 
+Prevent any reporting change that would create a cycle. Document the algorithm or database approach you used and 
+include tests for self, direct and indirect cycles. 
+6. Suggested Data Model 
+You are expected to design the database schema. The following are suggested entities, not a prescribed schema: 
+• Users and Roles 
+• Employees 
+• Departments 
+• Positions 
+• Employee Position History 
+• Leave Types and Leave Balances 
+• Leave Requests 
+• Approval Workflows, Approval Steps and Approval History 
+• Import Jobs and Import Errors 
+Use appropriate primary and foreign keys, unique constraints, indexes and transactions, and manage the schema through 
+database migrations. Explain important design decisions in your solution document. 
+7. Frontend Requirements 
+Build role-aware screens for the following: 
+• HR Administrator: employee management, bulk import, department and position management, organization 
+hierarchy, workflow configuration and organization-wide leave overview. 
+• Manager: team directory and hierarchy, leave requests awaiting their approval, and team leave status. 
+• Employee: own profile, permitted profile updates, leave application, leave balance and request history. 
+• Bulk import: file upload, validation and processing status, success and failure counts, and failed-row download. 
+Show appropriate loading, empty, validation, error and unauthorized states. Hiding a control in the UI does not replace 
+backend authorization. 
+Visual polish is not the focus. A clean, consistent and usable interface is enough, and you may use any UI component 
+library. 
+8. Non-Functional Requirements 
+• Enforce role-based access control on every protected backend API, including data-level checks. For example, a 
+Manager must not be able to fetch an employee outside their team by changing an ID in the request. 
+• Validate input on both frontend and backend; backend validation is authoritative. 
+• Return clear, consistently structured error responses with appropriate HTTP status codes, using centralized exception 
+handling. 
+• Use transactions for operations that must succeed or fail together. 
+• Keep the code modular, readable and maintainable. 
+Enterprise Workforce Management System | Candidate Assignment | Confidential | Page 7 of 8 
+• Do not commit passwords, secrets or environment-specific credentials. Use environment variables and provide a 
+sample configuration file (for example, .env.example). 
+9. Deliverables 
+Submit your work in two parts: the code in a public GitHub repository, and all documents by email. Keep the repository 
+limited to code; do not add documents to it. 
+In the public GitHub repository (code only) 
+• Source code with a meaningful commit history. Please do not squash your work into a single commit. 
+• Database migration scripts and seed data for the three roles. 
+• Dockerfile(s) and a Docker Compose configuration that start the full application locally with a single command. 
+• Tests for important business rules, especially role permissions, hierarchy cycle detection, bulk import, the leave 
+workflow and concurrent position assignment. 
+• Sample import files (a template, and a file of at least 1,000 rows with valid, invalid and duplicate records) or a script 
+that generates them. 
+• API documentation generated from the code (for example, Swagger/OpenAPI), available when the application runs. 
+By email (reply to all recipients of the assignment email) 
+• The link to your public GitHub repository. 
+• A solution document (PDF or Word) with setup and run instructions, seeded credentials for each role, your technology 
+choices, assumptions, known limitations, and the status (complete, partial or not started) of each major feature. 
+• A design section or separate short note (one to two pages) covering architecture, concurrency strategy, key trade-offs 
+and what you would improve with more time. 
+• The database ER diagram. 
+• Optional: a short screen recording (up to 5 minutes) of the main flows, as a file or a link. 
+10. Submission Guidelines 
+• Keep your GitHub repository public and limited to code. Share the repository link and all documents listed in Section 9 
+by replying to all recipients of the email this assignment was sent with. 
+• Do not push changes after the submission deadline mentioned in the email. We will review the last commit made 
+before the deadline. 
+• If a requirement is unclear, make a reasonable assumption, note it in your solution document and continue. You can 
+also ask questions by replying to all recipients of the assignment email. 
+• You may use open-source libraries, documentation and AI-assisted coding tools. The submission must still be your 
+own work, and you should be able to explain, justify and modify any part of it during the discussion. 
+• Please do not share this assignment document publicly. 
+11. Evaluation Criteria 
+Your submission will be assessed on the following areas: 
+Area What we look for 
+Functionality Core flows work end to end for all three roles, and business rules are enforced correctly. 
+Data model and persistence A sensible schema with the right keys, constraints, indexes and migrations, and correct use of 
+transactions. 
+Concurrency Bounded, controlled background processing; correct handling of simultaneous updates; a 
+clear explanation of why the approach works. 
+Enterprise Workforce Management System | Candidate Assignment | Confidential | Page 8 of 8 
+Area What we look for 
+Security Authentication and authorization enforced on the backend for every protected API, with data 
+correctly scoped to each role. 
+Code quality and design Clear structure and layering, readable code, consistent API design and sound error handling. 
+Testing Meaningful tests for the key business rules and concurrency scenarios, rather than tests 
+written only for coverage. 
+Frontend Role-aware, usable screens with proper loading, empty, error and unauthorized states. 
+Documentation and 
+communication 
+A clear solution document, an honest implementation status, well-reasoned trade-offs, and 
+the quality of your explanations during the discussion. 
+ 
+12. Technical Discussion 
+After you submit, we will schedule a technical discussion. Please have the application running locally before the session 
+starts, and be prepared to: 
+• demonstrate the core flows live, logging in as each of the three roles; 
+• walk through your code structure, data model and key design decisions; 
+• explain your concurrency approach for bulk import and position assignment, and how your tests prove it works; 
+• discuss trade-offs, known limitations and what you would change for a production system (for example, a much larger 
+organization or several application instances running in parallel); and 
+• make or describe a small change to your solution, such as adding an approval step or a new validation rule. 
+13. Self-Review Checklist 
+Use this checklist to review your submission before you send it. 
+☐  Seeded users exist for HR Administrator, Manager and Employee, and each role sees the correct screens and data. 
+☐  Only HR Administrator can create, update or deactivate employee master records and run bulk imports. 
+☐  Employees can view their own profile and update only permitted self-service fields; Managers can view only their team. 
+☐  Only HR Administrator can manage departments, positions, employee-position assignments and reporting relationships. 
+☐  No position can have more than one active assignment, including under concurrent requests, and an automated test 
+proves it. 
+☐  The system prevents circular reporting relationships (self, direct and indirect), and tests cover each case. 
+☐  Employees can submit leave requests with balance and overlap validation, and can track their own requests. 
+☐  Approval steps are configurable, sequential and recorded in an audit history; duplicate and invalid actions are rejected. 
+☐  Bulk import runs asynchronously on a bounded pool, reports valid and invalid rows separately, and supports safe retry 
+without duplicates. 
+☐  Backend APIs enforce permissions independently of what the frontend shows. 
+☐  The application starts with the Docker Compose setup described in your solution document, on a clean machine. 
+☐  The GitHub repository is public and contains only code; all documents are shared by email. 
+☐  The solution document states clearly what is complete, partial and not started. 
